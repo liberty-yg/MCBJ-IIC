@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcbj-iic-clustering"
+version = "0.2.0"
+description = "Utilities for clustering MCBJ breaking traces with a 1D IIC-style CNN"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "Samuel V Singh"}
+]
+dependencies = [
+  "numpy>=1.23",
+  "scipy>=1.9",
+  "matplotlib>=3.6",
+  "scikit-learn>=1.2"
+]
+
+[project.optional-dependencies]
+training = [
+  
+]
+dev = [
+  "pytest>=7.0",
+  "tensorflow>=2.12"
+]
+
+[project.scripts]
+mcbj-benchmark = "mcbj_iic.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src"
+]
+testpaths = ["tests"]

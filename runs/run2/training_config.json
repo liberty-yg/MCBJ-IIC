@@ -1,0 +1,30 @@
+{
+  "model_config": {
+    "input_shape": [
+      340,
+      1
+    ],
+    "numfilters": 32,
+    "filter_size": 7,
+    "numlayers": 3,
+    "num_clusters": 3,
+    "stride": 5,
+    "padding": "same",
+    "dilation": 1
+  },
+  "training_config": {
+    "learning_rate": 0.0005,
+    "epochs": 100,
+    "batch_size": 64,
+    "xshift": 0.05,
+    "xscale": 0.05,
+    "yshift": 0.05,
+    "yscale": 0.05,
+    "order": 3,
+    "verbose": 1,
+    "early_stop_epoch": 9,
+    "early_stop_abs_loss": 0.001,
+    "save_history_csv": true,
+    "extra_metadata": {}
+  }
+}
