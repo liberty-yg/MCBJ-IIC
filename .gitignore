@@ -1,0 +1,10 @@
+.venv/
+venv/
+tf_gpu_env/
+runs/
+*.keras
+*.mat
+*.dylib
+__pycache__/
+.DS_Store
+*.egg-info/
