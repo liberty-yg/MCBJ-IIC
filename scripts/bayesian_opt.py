@@ -82,7 +82,7 @@ def objective(trial: optuna.Trial) -> float:
 # Run the optimisation study
 # --------------------------------------------------------------------------
 if __name__ == "__main__":
-    N_TRIALS = 50  # increase for a more thorough search, decrease for a quick test
+    N_TRIALS = 100  # increase for a more thorough search, decrease for a quick test
     OUTPUT_DIR = ensure_dir("runs/bayesian_opt")
 
     print(f"\nStarting Bayesian optimisation — {N_TRIALS} trials")
