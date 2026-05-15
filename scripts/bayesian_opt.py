@@ -24,6 +24,7 @@ Install dependencies first if needed:
 
 from __future__ import annotations
 
+import argparse
 import numpy as np
 import optuna
 import tensorflow as tf
@@ -40,28 +41,45 @@ from mcbj_iic.utils import (
     save_json,
 )
 
+
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
-N_TRIALS = 100
-N_REPEATS_PER_TRIAL = 3       # repeats per trial for stable loss estimate
-EPOCHS_SEARCH = 50            # epochs per trial during search
-EPOCHS_VALIDATION = 100       # epochs for final top-3 validation
-CONVERGENCE_PATIENCE = 20     # stop if no improvement for this many trials
-CONVERGENCE_THRESHOLD = 1e-3  # minimum improvement to count as progress
-OUTPUT_DIR = ensure_dir("runs/bayesian_opt_100trials")
+parser = argparse.ArgumentParser()
+parser.add_argument("--test", action="store_true", help="Run quick sanity check")
+args = parser.parse_args()
 
-# Samplers to compare
-SAMPLERS = {
-    "TPE":    optuna.samplers.TPESampler(seed=42),
-    "CMA-ES": optuna.samplers.CmaEsSampler(seed=42),
-    "Random": optuna.samplers.RandomSampler(seed=42),
-}
-# GP sampler requires optuna >= 3.6
-try:
-    SAMPLERS["GP"] = optuna.samplers.GPSampler(seed=42)
-except AttributeError:
-    print("GP sampler not available in this Optuna version — skipping.")
+if args.test:
+    N_TRIALS = 10
+    N_REPEATS_PER_TRIAL = 1
+    EPOCHS_SEARCH = 30
+    EPOCHS_VALIDATION = 100
+    CONVERGENCE_PATIENCE = 5
+    CONVERGENCE_THRESHOLD = 1e-3
+    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_test")
+    SAMPLERS = {"TPE": optuna.samplers.TPESampler(seed=42)}
+    print("*** RUNNING IN TEST MODE ***")
+else:
+    # --------------------------------------------------------------------------
+    # Configuration
+    # --------------------------------------------------------------------------
+    N_TRIALS = 100
+    N_REPEATS_PER_TRIAL = 3
+    EPOCHS_SEARCH = 50
+    EPOCHS_VALIDATION = 100
+    CONVERGENCE_PATIENCE = 20
+    CONVERGENCE_THRESHOLD = 1e-3
+    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_results")
+    SAMPLERS = {
+        "TPE":    optuna.samplers.TPESampler(seed=42),
+        "CMA-ES": optuna.samplers.CmaEsSampler(seed=42),
+        "Random": optuna.samplers.RandomSampler(seed=42),
+    }
+    # GP sampler requires optuna >= 3.6
+    try:
+        SAMPLERS["GP"] = optuna.samplers.GPSampler(seed=42)
+    except AttributeError:
+        print("GP sampler not available in this Optuna version — skipping.")
 
 # --------------------------------------------------------------------------
 # GPU setup — must happen before any TF operations
@@ -131,6 +149,7 @@ def objective(trial: optuna.Trial) -> float:
         yscale=trial.suggest_float("yscale", 0.02, 0.15),
         order=3,
         verbose=0,
+        early_stop_epoch=999,
     )
 
     losses: list[float] = []
@@ -204,7 +223,7 @@ def make_convergence_callback(patience: int, threshold: float):
         study: optuna.Study, trial: optuna.Trial
     ) -> None:
         completed = [t for t in study.trials if t.value is not None]
-        if len(completed) < patience:
+        if len(completed) <= patience:
             return
 
         best_values: list[float] = []
@@ -328,6 +347,7 @@ def validate_top_configs(
             yscale=trial.params["yscale"],
             order=3,
             verbose=1,
+            early_stop_epoch=999,
         )
 
         val_losses: list[float] = []
