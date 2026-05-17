@@ -7,26 +7,35 @@ Key improvements over the previous version:
 - Loss-based objective (no ground truth labels required)
 - GPU memory growth configured to prevent OOM
 - TF session cleared between trials to prevent memory accumulation
+- Explicit garbage collection after every trial to prevent RAM accumulation
 - 3 repeats per trial for stable estimates
 - Multiple sampler comparison (TPE, CMA-ES, Random, GP)
 - Convergence detection with automatic early stopping
 - Logarithmic curve fitting to characterise convergence rate
-- GPU memory monitoring per trial
+- GPU and RAM memory monitoring per trial
+- Per-trial incremental JSON saving (crash-safe)
+- Timing tracking (start time, end time, elapsed hours per sampler)
 - Top-3 validation at full 100 epochs
 - Exception catching to prevent single trial crashes killing the study
+- --test flag for quick sanity checks without editing the file
 
 Run with:
-    python scripts/bayesian_opt.py
+    python scripts/bayesian_opt.py           # full run
+    python scripts/bayesian_opt.py --test    # 10-trial sanity check
 
 Install dependencies first if needed:
-    pip install optuna scipy
+    pip install optuna scipy psutil
 """
 
 from __future__ import annotations
 
 import argparse
+import gc
+import time
+from datetime import datetime
 import numpy as np
 import optuna
+import psutil
 import tensorflow as tf
 from scipy.optimize import curve_fit
 from scipy.stats import linregress
@@ -102,18 +111,29 @@ print(
 
 
 # --------------------------------------------------------------------------
-# GPU memory helper
+# Memory monitoring helper
 # --------------------------------------------------------------------------
-def get_gpu_memory_mb() -> dict | None:
-    """Return current and peak GPU memory usage in MB, or None if unavailable."""
+def get_memory_usage() -> dict:
+    """Return GPU and system RAM usage. Returns empty dict if unavailable."""
+    result: dict = {}
+
+    # GPU memory
     try:
         info = tf.config.experimental.get_memory_info("GPU:0")
-        return {
-            "current_mb": info["current"] / 1024 ** 2,
-            "peak_mb":    info["peak"]    / 1024 ** 2,
-        }
+        result["gpu_peak_mb"]    = round(info["peak"]    / 1024 ** 2, 1)
+        result["gpu_current_mb"] = round(info["current"] / 1024 ** 2, 1)
     except Exception:
-        return None
+        pass
+
+    # System RAM
+    try:
+        ram = psutil.virtual_memory()
+        result["ram_used_gb"]  = round(ram.used  / 1024 ** 3, 2)
+        result["ram_percent"]  = ram.percent
+    except Exception:
+        pass
+
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -183,10 +203,13 @@ def objective(trial: optuna.Trial) -> float:
     std_ami   = float(np.std(amis))
     std_loss  = float(np.std(losses))
 
-    # Monitor GPU memory
-    mem = get_gpu_memory_mb()
-    if mem:
-        trial.set_user_attr("gpu_peak_mb", round(mem["peak_mb"], 1))
+    # Monitor GPU and RAM memory
+    mem = get_memory_usage()
+    if mem.get("gpu_peak_mb"):
+        trial.set_user_attr("gpu_peak_mb", mem["gpu_peak_mb"])
+    if mem.get("ram_used_gb"):
+        trial.set_user_attr("ram_used_gb", mem["ram_used_gb"])
+        trial.set_user_attr("ram_percent", mem["ram_percent"])
 
     # Store AMI and stability metrics for post-hoc analysis
     trial.set_user_attr("ami_mean", mean_ami)
@@ -207,8 +230,32 @@ def objective(trial: optuna.Trial) -> float:
         f"stride={model_config.stride} | "
         f"loss={mean_loss:.4f}±{std_loss:.4f}  "
         f"AMI={mean_ami:.4f}±{std_ami:.4f}"
-        + (f"  GPU={mem['peak_mb']:.0f}MB" if mem else "")
+        + (f"  GPU={mem.get('gpu_peak_mb', '?')}MB"
+           f"  RAM={mem.get('ram_used_gb', '?')}GB({mem.get('ram_percent', '?')}%)"
+           if mem else "")
     )
+
+    # Incremental save — written after every trial so crashes don't lose results
+    save_json(
+        OUTPUT_DIR / f"trial_{trial.number:04d}.json",
+        {
+            "number":                 trial.number,
+            "timestamp":              datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "loss":                   mean_loss,
+            "ami_mean":               mean_ami,
+            "ami_std":                std_ami,
+            "loss_std":               std_loss,
+            "gpu_peak_mb":            mem.get("gpu_peak_mb"),
+            "ram_used_gb":            mem.get("ram_used_gb"),
+            "ram_percent":            mem.get("ram_percent"),
+            "num_predicted_clusters": int(metrics["num_predicted_clusters"]),
+            "params":                 trial.params,
+        },
+    )
+
+    # Explicit garbage collection to prevent RAM accumulation across trials
+    gc.collect()
+    tf.keras.backend.clear_session()
 
     return mean_loss
 
@@ -408,6 +455,10 @@ if __name__ == "__main__":
 
         tf.keras.backend.clear_session()
 
+        sampler_start_time = time.time()
+        sampler_start_str  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"Started at: {sampler_start_str}")
+
         study = optuna.create_study(
             direction="minimize",    # minimise loss — more negative = better clustering
             study_name=f"mcbj_iic_{sampler_name}",
@@ -425,6 +476,13 @@ if __name__ == "__main__":
         )
 
         # Build best-value trajectory for curve fitting
+        sampler_end_time  = time.time()
+        sampler_end_str   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        elapsed_seconds   = sampler_end_time - sampler_start_time
+        elapsed_hours     = elapsed_seconds / 3600
+        print(f"Finished at: {sampler_end_str}")
+        print(f"Total time:  {elapsed_hours:.2f} hours ({elapsed_seconds / 60:.1f} minutes)")
+
         completed = [t for t in study.trials if t.value is not None]
         best_values: list[float] = []
         current_best = float("inf")
@@ -447,6 +505,8 @@ if __name__ == "__main__":
                 "ami_std":                t.user_attrs.get("ami_std"),
                 "loss_std":               t.user_attrs.get("loss_std"),
                 "gpu_peak_mb":            t.user_attrs.get("gpu_peak_mb"),
+                "ram_used_gb":            t.user_attrs.get("ram_used_gb"),
+                "ram_percent":            t.user_attrs.get("ram_percent"),
                 "num_predicted_clusters": t.user_attrs.get("num_predicted_clusters"),
                 "params":                 t.params,
                 "state":                  str(t.state),
@@ -456,6 +516,9 @@ if __name__ == "__main__":
 
         sampler_result = {
             "sampler":                  sampler_name,
+            "start_time":               sampler_start_str,
+            "end_time":                 sampler_end_str,
+            "elapsed_hours":            round(elapsed_hours, 3),
             "n_trials_run":             len(completed),
             "best_loss":                float(study.best_value),
             "best_params":              study.best_params,
