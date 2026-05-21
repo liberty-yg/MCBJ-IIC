@@ -25,6 +25,7 @@ class ModelConfig:
     stride: int = 1
     padding: str = "same"
     dilation: int = 1
+    use_batch_norm: bool = True
 
 
 @dataclass(slots=True)
@@ -49,7 +50,7 @@ class TrainingConfig:
     save_history_csv: bool = True
     extra_metadata: dict[str, Any] = field(default_factory=dict)
 
-
+# Edited build_iic_model with normalized batching:
 def build_iic_model(config: ModelConfig):
     """Build the 1D CNN used for univariate clustering.
 
@@ -70,15 +71,51 @@ def build_iic_model(config: ModelConfig):
             strides=config.stride,
             padding=config.padding,
             dilation_rate=config.dilation,
-            activation="elu",
+            activation=None,
             kernel_initializer="glorot_normal",
             name=f"conv_{layer_idx + 1}",
+        )(x)
+        if config.use_batch_norm:
+            x = keras.layers.BatchNormalization(
+                name=f"bn_{layer_idx + 1}")(x)
+        x = keras.layers.Activation(
+            "elu",
+            name=f"elu_{layer_idx + 1}"
         )(x)
 
     x = keras.layers.Flatten(name="flatten_features")(x)
     outputs = keras.layers.Dense(config.num_clusters, activation="softmax", name="cluster_probabilities")(x)
     return keras.Model(inputs=inputs, outputs=outputs, name="iic_univariate")
 
+#Old version before modifying and adding batch normalization
+# def build_iic_model(config: ModelConfig):
+#     """Build the 1D CNN used for univariate clustering.
+
+#     Each convolutional block doubles the number of filters.
+#     """
+
+#     tf = require_tensorflow()
+#     keras = tf.keras
+
+#     inputs = keras.layers.Input(shape=config.input_shape, name="trace_input")
+#     x = inputs
+
+#     for layer_idx in range(config.numlayers):
+#         filters = config.numfilters * (2 ** layer_idx)
+#         x = keras.layers.Conv1D(
+#             filters=filters,
+#             kernel_size=config.filter_size,
+#             strides=config.stride,
+#             padding=config.padding,
+#             dilation_rate=config.dilation,
+#             activation="elu",
+#             kernel_initializer="glorot_normal",
+#             name=f"conv_{layer_idx + 1}",
+#         )(x)
+
+#     x = keras.layers.Flatten(name="flatten_features")(x)
+#     outputs = keras.layers.Dense(config.num_clusters, activation="softmax", name="cluster_probabilities")(x)
+#     return keras.Model(inputs=inputs, outputs=outputs, name="iic_univariate")
 
 def _write_training_history_csv(history: list[dict[str, float]], path: str | Path) -> None:
     """Save the epoch history so runs are easy to compare across experiments."""

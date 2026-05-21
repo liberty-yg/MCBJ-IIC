@@ -30,7 +30,7 @@ from .utils import (
     transform_traces,
 )
 
-
+#Edited the cli.py to include batch normalization
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train and evaluate the MCBJ IIC benchmark workflow.")
     parser.add_argument(
@@ -43,6 +43,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-clusters", type=int, default=7)
     parser.add_argument("--crop-size", type=int, default=340)
     parser.add_argument("--conductance-floor", type=float, default=-5.5)
+    parser.add_argument(
+        "--no-batch-norm", action="store_true",
+        help="Disable batch normalisation (not recommended)",
+    )
+    # parser = argparse.ArgumentParser(description="Train and evaluate the MCBJ IIC benchmark workflow.")
+    # parser.add_argument(
+    #     "--data",
+    #     type=str,
+    #     default=None,
+    #     help="Path to the local MATLAB dataset. If omitted, the script searches for Data.mat in the current folder or repository root.",
+    # )
+    # parser.add_argument("--output-dir", type=str, default="runs/benchmark_run", help="Directory where results are saved")
+    # parser.add_argument("--num-clusters", type=int, default=7)
+    # parser.add_argument("--crop-size", type=int, default=340)
+    # parser.add_argument("--conductance-floor", type=float, default=-5.5)
 
     # Model hyperparameters.
     parser.add_argument("--numfilters", type=int, default=32)
@@ -94,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         stride=args.stride,
         padding=args.padding,
         dilation=args.dilation,
+        use_batch_norm=not args.no_batch_norm,
     )
     training_config = TrainingConfig(
         learning_rate=args.learning_rate,
