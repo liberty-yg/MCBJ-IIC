@@ -158,6 +158,8 @@ def objective(trial: optuna.Trial) -> float:
         stride=trial.suggest_int("stride", 1, 7, step=2),
         padding="same",
         dilation=1,
+        use_batch_norm=True,
+        num_clusters_overclustering=trial.suggest_int("num_clusters", 5, 9) * 3,
     )
     training_config = TrainingConfig(
         learning_rate=trial.suggest_float("learning_rate", 1e-4, 1e-3, log=True),
