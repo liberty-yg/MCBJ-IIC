@@ -149,17 +149,19 @@ def objective(trial: optuna.Trial) -> float:
     # Clear accumulated TF graphs and weights from previous trials
     tf.keras.backend.clear_session()
 
+    num_clusters = trial.suggest_int("num_clusters", 5, 9)
+
     model_config = ModelConfig(
         input_shape=(340, 1),
         numfilters=trial.suggest_int("numfilters", 16, 64, step=16),
         filter_size=trial.suggest_int("filter_size", 5, 15, step=2),
         numlayers=trial.suggest_int("numlayers", 2, 4),
-        num_clusters=trial.suggest_int("num_clusters", 5, 9),
+        num_clusters=num_clusters,
         stride=trial.suggest_int("stride", 1, 7, step=2),
         padding="same",
         dilation=1,
         use_batch_norm=True,
-        num_clusters_overclustering=trial.suggest_int("num_clusters", 5, 9) * 3,
+        num_clusters_overclustering=num_clusters * 3,
     )
     training_config = TrainingConfig(
         learning_rate=trial.suggest_float("learning_rate", 1e-4, 1e-3, log=True),
@@ -376,15 +378,18 @@ def validate_top_configs(
         print(f"\nValidating rank {rank + 1} config (trial {trial.number})...")
         tf.keras.backend.clear_session()
 
+        num_clusters_val = trial.params["num_clusters"]
         model_config = ModelConfig(
             input_shape=(340, 1),
             numfilters=trial.params["numfilters"],
             filter_size=trial.params["filter_size"],
             numlayers=trial.params["numlayers"],
-            num_clusters=trial.params["num_clusters"],
+            num_clusters=num_clusters_val,
             stride=trial.params["stride"],
             padding="same",
             dilation=1,
+            use_batch_norm=True,
+            num_clusters_overclustering=num_clusters_val * 3,
         )
         training_config = TrainingConfig(
             learning_rate=trial.params["learning_rate"],
@@ -582,6 +587,7 @@ if __name__ == "__main__":
         f"\npython scripts/bench7.py"
         f" --epochs {EPOCHS_VALIDATION}"
         f" --num-clusters {p['num_clusters']}"
+        f" --num-clusters-overclustering {p['num_clusters'] * 3}"
         f" --numfilters {p['numfilters']}"
         f" --filter-size {p['filter_size']}"
         f" --numlayers {p['numlayers']}"
