@@ -22,6 +22,7 @@ class ModelConfig:
     filter_size: int = 9
     numlayers: int = 4
     num_clusters: int = 7
+    num_clusters_overclustering: int = 0
     stride: int = 1
     padding: str = "same"
     dilation: int = 1
@@ -84,8 +85,40 @@ def build_iic_model(config: ModelConfig):
         )(x)
 
     x = keras.layers.Flatten(name="flatten_features")(x)
-    outputs = keras.layers.Dense(config.num_clusters, activation="softmax", name="cluster_probabilities")(x)
-    return keras.Model(inputs=inputs, outputs=outputs, name="iic_univariate")
+
+    # Main clustering head
+
+    main_output = keras.layers.Dense(
+        config.num_clusters,
+        activation="softmax",
+        name="cluster_probabilities"
+    )(x)
+
+    #Overclustering head — only added if num_clusters_overclustering > num_clusters
+
+    if config.num_clusters_overclustering > config.num_clusters:
+        over_output = keras.layers.Dense(
+            config.num_clusters_overclustering,
+            activation="softmax",
+            name="overclustering_probabilities"
+        )(x)
+        return keras.Model(
+            inputs=inputs,
+            outputs=[main_output, over_output],
+            name="iic_univariate_two_head"
+        )
+    
+    return keras.Model(
+        inputs=inputs,
+        outputs=main_output,
+        name="iic_univatiate"
+    )
+
+
+
+    #The original before overclustering:
+    # outputs = keras.layers.Dense(config.num_clusters, activation="softmax", name="cluster_probabilities")(x)
+    # return keras.Model(inputs=inputs, outputs=outputs, name="iic_univariate")
 
 #Old version before modifying and adding batch normalization
 # def build_iic_model(config: ModelConfig):
@@ -177,9 +210,23 @@ def train_iic_model(
             batch_aug = augmented[start:stop]
 
             with tf.GradientTape() as tape:
-                predictions_x = model(batch_x, training=True)
-                predictions_aug = model(batch_aug, training=True)
-                current_loss = iic_loss(predictions_x, predictions_aug, model_config.num_clusters)
+                outputs_x = model(batch_x, training=True)
+                outputs_aug =model(batch_aug, training=True)
+
+                if isinstance(outputs_x, (list, tuple)):
+                    #Two-head: sum IIC loss from both heads
+                    main_x, over_x = outputs_x
+                    main_aug, over_aug = outputs_aug 
+                    loss_main = iic_loss(main_x, main_aug, model_config.num_clusters)
+                    loss_over = iic_loss(over_x, over_aug, model_config.num_clusters_overclustering)
+                    current_loss = loss_main + loss_over
+                else:
+                    # Single-head - backward compatible
+                    current_loss = iic_loss(outputs_x, outputs_aug, model_config.num_clusters)
+
+                # predictions_x = model(batch_x, training=True)
+                # predictions_aug = model(batch_aug, training=True)
+                # current_loss = iic_loss(predictions_x, predictions_aug, model_config.num_clusters)
 
             gradients = tape.gradient(current_loss, model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))

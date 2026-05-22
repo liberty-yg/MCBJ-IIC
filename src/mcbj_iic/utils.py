@@ -140,20 +140,24 @@ def iic_loss(pi_x, pi_gx, num_clusters: int):
     return tf.reduce_sum(joint * (tf.math.log(pi) + tf.math.log(pj) - tf.math.log(joint)))
 
 
-def predict_in_batches(
-    x: np.ndarray,
-    model,
-    *,
-    num_clusters: int,
-    batch_size: int = 64,
-) -> np.ndarray:
-    """Run model inference in batches without dropping the last partial batch."""
-
+def predict_in_batches(x: np.ndarray, model, *, num_clusters: int, batch_size: int = 64,) -> np.ndarray:
+    
     probabilities = np.zeros((x.shape[0], num_clusters), dtype=float)
     for start in range(0, x.shape[0], batch_size):
         stop = min(start + batch_size, x.shape[0])
-        probabilities[start:stop] = np.asarray(model(x[start:stop], training=False))
+        output = model(x[start:stop], training=False)
+
+        if isinstance(output, (list, tuple)):
+            output = output[0]
+        probabilities[start:stop] = np.asarray(output)
     return probabilities
+    # """Run model inference in batches without dropping the last partial batch."""
+
+    # probabilities = np.zeros((x.shape[0], num_clusters), dtype=float)
+    # for start in range(0, x.shape[0], batch_size):
+    #     stop = min(start + batch_size, x.shape[0])
+    #     probabilities[start:stop] = np.asarray(model(x[start:stop], training=False))
+    # return probabilities
 
 
 def to_one_hot(labels: np.ndarray, num_classes: int | None = None) -> np.ndarray:

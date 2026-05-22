@@ -78,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--order", type=int, default=3)
     parser.add_argument("--no-gpu-memory-growth", action="store_true")
     parser.add_argument("--save-activation-plots", action="store_true")
+
+    parser.add_argument(
+        "--num-clusters-overclustering",
+        type=int,
+        default=0,
+        help="Number of overclustering head clusters. 0 disables. Recommended: 3x num-clusters (e.g. 21 for 7 clusters).",
+    )
     return parser
 
 
@@ -106,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         filter_size=args.filter_size,
         numlayers=args.numlayers,
         num_clusters=args.num_clusters,
+        num_clusters_overclustering=args.num_clusters_overclustering, 
         stride=args.stride,
         padding=args.padding,
         dilation=args.dilation,

@@ -29,15 +29,15 @@ import numpy as np
 # Helpers
 # --------------------------------------------------------------------------
 
-SAMPLER_COLOURS = {
+SAMPLER_COLORS = {
     "TPE":    "#2196F3",   # blue
     "CMA-ES": "#F44336",   # red
     "Random": "#4CAF50",   # green
     "GP":     "#FF9800",   # orange
 }
 
-def _colour(name: str) -> str:
-    return SAMPLER_COLOURS.get(name, "#9C27B0")
+def _color(name: str) -> str:
+    return SAMPLER_COLORS.get(name, "#9C27B0")
 
 
 def _finalise(fig, path: Path, dpi: int = 200) -> None:
@@ -107,9 +107,9 @@ def plot_convergence(results: dict[str, dict], output_dir: Path) -> None:
         losses = [t["loss"] for t in trials]
         best = best_so_far(losses)
         x = list(range(len(best)))
-        colour = _colour(sampler_name)
-        ax.plot(x, best, label=sampler_name, colour=colour, linewidth=2)
-        ax.scatter(x, losses, alpha=0.15, s=10, colour=colour)
+        color = _color(sampler_name)
+        ax.plot(x, best, label=sampler_name, color=color, linewidth=2)
+        ax.scatter(x, losses, alpha=0.15, s=10, color=color)
 
     ax.set_xlabel("Trial number")
     ax.set_ylabel("Loss (lower = better clustering)")
@@ -137,9 +137,9 @@ def plot_convergence_fits(results: dict[str, dict], output_dir: Path) -> None:
         losses = [t["loss"] for t in trials]
         best = np.array(best_so_far(losses))
         x = np.arange(len(best), dtype=float)
-        colour = _colour(sampler_name)
+        color = _color(sampler_name)
 
-        ax.scatter(x, best, s=15, alpha=0.6, colour=colour, label="observed")
+        ax.scatter(x, best, s=15, alpha=0.6, color=color, label="observed")
 
         # Logarithmic fit
         fits = data.get("convergence_fits", {})
@@ -148,7 +148,7 @@ def plot_convergence_fits(results: dict[str, dict], output_dir: Path) -> None:
             a, b = log["a"], log["b"]
             x_pred = np.linspace(0, len(x) * 1.3, 200)
             y_pred = a * np.log(x_pred + 1) + b
-            ax.plot(x_pred, y_pred, "--", colour="black",
+            ax.plot(x_pred, y_pred, "--", color="black",
                     label=f"log fit R²={log['r2']:.3f}")
             pred_imp = log.get("predicted_improvement_next_20_trials", 0)
             ax.annotate(
@@ -163,7 +163,7 @@ def plot_convergence_fits(results: dict[str, dict], output_dir: Path) -> None:
             lin = fits["linear"]
             slope, intercept = lin["slope"], lin["intercept"]
             y_lin = slope * x + intercept
-            ax.plot(x, y_lin, ":", colour="grey",
+            ax.plot(x, y_lin, ":", color="grey",
                     label=f"linear fit R²={lin['r2']:.3f}")
 
         ax.set_xlabel("Trial number")
@@ -192,7 +192,7 @@ def plot_loss_vs_ami(results: dict[str, dict], output_dir: Path) -> None:
         if not losses:
             continue
         ax.scatter(losses, amis, alpha=0.5, s=20,
-                   colour=_colour(sampler_name), label=sampler_name)
+                   color=_color(sampler_name), label=sampler_name)
 
     ax.set_xlabel("Final training loss")
     ax.set_ylabel("AMI (mean over repeats)")
@@ -219,7 +219,7 @@ def plot_ami_stability(results: dict[str, dict], output_dir: Path) -> None:
         if not means:
             continue
         ax.scatter(means, stds, alpha=0.5, s=20,
-                   colour=_colour(sampler_name), label=sampler_name)
+                   color=_color(sampler_name), label=sampler_name)
 
     ax.set_xlabel("AMI mean (across repeats)")
     ax.set_ylabel("AMI std (across repeats)")
@@ -247,20 +247,20 @@ def plot_memory_usage(results: dict[str, dict], output_dir: Path) -> None:
 
     for sampler_name, data in results.items():
         trials = extract_trials(data)
-        colour = _colour(sampler_name)
+        color = _color(sampler_name)
 
         gpu_vals = [(t["number"], t["gpu_peak_mb"])
                     for t in trials if t.get("gpu_peak_mb") is not None]
         if gpu_vals:
             x, y = zip(*gpu_vals)
-            ax_gpu.plot(x, y, marker="o", ms=3, colour=colour,
+            ax_gpu.plot(x, y, marker="o", ms=3, color=color,
                         label=sampler_name, linewidth=1.2)
 
         ram_vals = [(t["number"], t["ram_used_gb"])
                     for t in trials if t.get("ram_used_gb") is not None]
         if ram_vals:
             x, y = zip(*ram_vals)
-            ax_ram.plot(x, y, marker="o", ms=3, colour=colour,
+            ax_ram.plot(x, y, marker="o", ms=3, color=color,
                         label=sampler_name, linewidth=1.2)
 
     ax_gpu.set_ylabel("GPU peak memory (MB)")
@@ -303,8 +303,8 @@ def plot_collapse_rate(results: dict[str, dict], output_dir: Path) -> None:
         return
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    colours = [_colour(n) for n in sampler_names]
-    bars = ax.bar(sampler_names, collapse_rates, colour=colours, alpha=0.8)
+    colors = [_color(n) for n in sampler_names]
+    bars = ax.bar(sampler_names, collapse_rates, color=colors, alpha=0.8)
 
     # Annotate bars with counts
     for bar, name, rate, total in zip(bars, sampler_names, collapse_rates, total_trials):
@@ -364,11 +364,11 @@ def plot_parameter_importance(results: dict[str, dict], output_dir: Path) -> Non
     # Sort by absolute correlation
     sorted_params = sorted(correlations, key=lambda k: abs(correlations[k]), reverse=True)
     corr_vals = [correlations[p] for p in sorted_params]
-    colours = ["#F44336" if c < 0 else "#2196F3" for c in corr_vals]
+    colors = ["#F44336" if c < 0 else "#2196F3" for c in corr_vals]
     sig_markers = ["*" if pvalues[p] < 0.05 else "" for p in sorted_params]
 
     fig, ax = plt.subplots(figsize=(9, 6))
-    bars = ax.barh(sorted_params, corr_vals, colour=colours, alpha=0.8)
+    bars = ax.barh(sorted_params, corr_vals, color=colors, alpha=0.8)
 
     # Mark significant correlations
     for bar, marker in zip(bars, sig_markers):
@@ -380,14 +380,14 @@ def plot_parameter_importance(results: dict[str, dict], output_dir: Path) -> Non
                 fontsize=12, color="black",
             )
 
-    ax.axvline(0, colour="black", linewidth=0.8)
+    ax.axvline(0, color="black", linewidth=0.8)
     ax.set_xlabel("Spearman correlation with training loss\n"
                   "(negative = lower loss / better, * = p < 0.05)")
     ax.set_title("Parameter importance\n"
                  "(non-collapsed trials only, all samplers combined)")
     ax.grid(True, alpha=0.3, axis="x")
 
-    # Legend for colour meaning
+    # Legend for color meaning
     from matplotlib.patches import Patch
     ax.legend(handles=[
         Patch(facecolor="#F44336", alpha=0.8, label="negative corr (higher value → better loss)"),
