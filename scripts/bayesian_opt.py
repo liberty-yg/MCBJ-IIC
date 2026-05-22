@@ -72,23 +72,23 @@ else:
     # --------------------------------------------------------------------------
     # Configuration
     # --------------------------------------------------------------------------
-    N_TRIALS = 100
+    N_TRIALS = 200
     N_REPEATS_PER_TRIAL = 3
     EPOCHS_SEARCH = 50
     EPOCHS_VALIDATION = 100
-    CONVERGENCE_PATIENCE = 20
+    CONVERGENCE_PATIENCE = 30
     CONVERGENCE_THRESHOLD = 1e-3
-    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_results")
+    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_tpe_200")
     SAMPLERS = {
         "TPE":    optuna.samplers.TPESampler(seed=42),
-        "CMA-ES": optuna.samplers.CmaEsSampler(seed=42),
-        "Random": optuna.samplers.RandomSampler(seed=42),
+        # "CMA-ES": optuna.samplers.CmaEsSampler(seed=42),
+        # "Random": optuna.samplers.RandomSampler(seed=42),
     }
     # GP sampler requires optuna >= 3.6
-    try:
-        SAMPLERS["GP"] = optuna.samplers.GPSampler(seed=42)
-    except AttributeError:
-        print("GP sampler not available in this Optuna version — skipping.")
+    # try:
+    #     SAMPLERS["GP"] = optuna.samplers.GPSampler(seed=42)
+    # except AttributeError:
+    #     print("GP sampler not available in this Optuna version — skipping.")
 
 # --------------------------------------------------------------------------
 # GPU setup — must happen before any TF operations
