@@ -76,9 +76,9 @@ else:
     N_REPEATS_PER_TRIAL = 3
     EPOCHS_SEARCH = 50
     EPOCHS_VALIDATION = 100
-    CONVERGENCE_PATIENCE = 30
+    CONVERGENCE_PATIENCE = 200
     CONVERGENCE_THRESHOLD = 1e-3
-    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_tpe_200")
+    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_tpe_200_run2")
     SAMPLERS = {
         "TPE":    optuna.samplers.TPESampler(seed=42),
         # "CMA-ES": optuna.samplers.CmaEsSampler(seed=42),

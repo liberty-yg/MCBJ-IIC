@@ -11,6 +11,8 @@ python scripts/cvs.py --data Data.mat --output-dir runs/cvs"""
 
 from __future__ import annotations
 
+import dataclasses
+import tensorflow as tf
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -86,15 +88,13 @@ def run_cvs(
         print(f"\nTraining with k={k} clusters...")
         
         # Update num_clusters for this run
-        import dataclasses
-        model_config = dataclasses.replace(model_config_base, num_clusters=k)
+        model_config = dataclasses.replace(model_config_base, num_clusters=k,num_clusters_overclustering=k * 3)
         
         # Run n_repeats times, take the best (lowest loss) result
         best_loss = float("inf")
         best_labels = None
         
         for repeat in range(n_repeats):
-            import tensorflow as tf
             tf.keras.backend.clear_session()
             
             model, history = train_iic_model(
@@ -105,7 +105,7 @@ def run_cvs(
             )
             
             final_loss = history[-1]["loss"]
-            if final_loss < best_loss:
+            if final_loss < best_loss and abs(final_loss) > 1e-4:
                 best_loss = final_loss
                 probabilities = predict_in_batches(
                     dataset.x, model,
@@ -113,6 +113,11 @@ def run_cvs(
                 )
                 best_labels = np.argmax(probabilities, axis=1)
         
+        if best_labels is None:
+            print(f" k={k} all repeats collapsed - skipping")
+            max_correlations[k] = 0.0
+            continue
+
         print(f"  k={k} best loss: {best_loss:.4f}")
         
         # Compute pairwise correlations between cluster histograms
@@ -201,6 +206,8 @@ if __name__ == "__main__":
         stride=args.stride,
         padding="same",
         dilation=1,
+        use_batch_norm=True,
+        num_clusters_overclustering=0, #disable for CVS - simpler and faster
     )
     training_config = TrainingConfig(
         learning_rate=args.learning_rate,
