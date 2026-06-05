@@ -70,6 +70,16 @@ if args.test:
     OUTPUT_DIR = ensure_dir("runs/bayesian_opt_test")
     SAMPLERS = {"TPE": optuna.samplers.TPESampler(seed=42)}
     print("*** RUNNING IN TEST MODE ***")
+elif args.unlabelled:
+    N_TRIALS = 100
+    N_REPEATS_PER_TRIAL = 3
+    EPOCHS_SEARCH = 50
+    EPOCHS_VALIDATION = 100
+    CONVERGENCE_PATIENCE = 50
+    CONVERGENCE_THRESHOLD = 1e-3
+    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_unlabelled")
+    SAMPLERS = {"TPE": optuna.samplers.TPESampler(seed=42)}
+    print("*** RUNNING IN UNLABELLED MODE ***")
 else:
     # --------------------------------------------------------------------------
     # Configuration
