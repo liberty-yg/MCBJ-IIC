@@ -193,45 +193,83 @@ def preprocess_matlab_dataset(
 ) -> DatasetBundle:
     """Create the benchmark training tensor from a MATLAB dictionary.
 
+    Handles both labelled benchmark data (Data.mat with Labels key) and
+    unlabelled preprocessed data (1D-Data.mat without Labels key).
+
     The dataset order is shuffled with a fresh random generator so each run starts
     from a new random ordering. The Framework is stochastic during training.
     """
 
-    data = matlab_dict["Data"]
-    labels = matlab_dict["Labels"]
+    # Support both 'Data' (benchmark) and 'data' (unlabelled) key names
+    raw = matlab_dict.get("Data") if "Data" in matlab_dict else matlab_dict.get("data")
+    if raw is None:
+        raise KeyError("MATLAB file must contain a 'Data' or 'data' key.")
+    data = np.array(raw)
 
-    mask, zero_based_labels = _filter_and_zero_base_labels(labels, allowed_labels)
-    filtered_raw = data[mask].reshape(-1)
+    if "Labels" in matlab_dict:
+        # --- Labelled benchmark dataset ---
+        labels = matlab_dict["Labels"]
+        mask, zero_based_labels = _filter_and_zero_base_labels(
+            labels, allowed_labels
+        )
+        filtered_raw = data[mask].reshape(-1)
 
-    if shuffle:
-        order = np.random.default_rng().permutation(len(filtered_raw))
-        filtered_raw = filtered_raw[order]
-        zero_based_labels = zero_based_labels[order]
+        if shuffle:
+            order = np.random.default_rng().permutation(len(filtered_raw))
+            filtered_raw = filtered_raw[order]
+            zero_based_labels = zero_based_labels[order]
 
-    inferred_crop_size = infer_crop_size(filtered_raw)
-    final_crop_size = int(crop_size or inferred_crop_size)
-    processed = preprocess_raw_traces(
-        filtered_raw,
-        crop_size=final_crop_size,
-        conductance_floor=conductance_floor,
-    )
+        inferred_crop_size = infer_crop_size(filtered_raw)
+        final_crop_size = int(crop_size or inferred_crop_size)
+        processed = preprocess_raw_traces(
+            filtered_raw,
+            crop_size=final_crop_size,
+            conductance_floor=conductance_floor,
+        )
+        x = processed[..., np.newaxis]
+        metadata = {
+            "num_samples":        int(len(filtered_raw)),
+            "num_clusters":       int(len(np.unique(zero_based_labels))),
+            "inferred_crop_size": int(inferred_crop_size),
+            "crop_size":          int(final_crop_size),
+            "conductance_floor":  float(conductance_floor),
+            "labelled":           True,
+        }
+        return DatasetBundle(
+            x=x,
+            y=zero_based_labels.astype(int),
+            raw_traces=filtered_raw,
+            crop_size=final_crop_size,
+            metadata=metadata,
+        )
 
-    x = processed[..., np.newaxis]
-    metadata = {
-        "num_samples": int(len(filtered_raw)),
-        "num_clusters": int(len(np.unique(zero_based_labels))),
-        "inferred_crop_size": int(inferred_crop_size),
-        "crop_size": int(final_crop_size),
-        "conductance_floor": float(conductance_floor),
-    }
+    else:
+        # --- Unlabelled preprocessed dataset (shape: n, 340, 1 or n, 340) ---
+        if shuffle:
+            order = np.random.default_rng().permutation(len(data))
+            data = data[order]
 
-    return DatasetBundle(
-        x=x,
-        y=zero_based_labels.astype(int),
-        raw_traces=filtered_raw,
-        crop_size=final_crop_size,
-        metadata=metadata,
-    )
+        # Ensure shape is (n_samples, crop_size, 1)
+        if data.ndim == 2:
+            x = data[..., np.newaxis]
+        else:
+            x = data
+
+        final_crop_size = int(x.shape[1])
+        metadata = {
+            "num_samples":       int(len(x)),
+            "num_clusters":      None,
+            "crop_size":         final_crop_size,
+            "conductance_floor": float(conductance_floor),
+            "labelled":          False,
+        }
+        return DatasetBundle(
+            x=x,
+            y=None,
+            raw_traces=None,
+            crop_size=final_crop_size,
+            metadata=metadata,
+        )
 
 def load_mat_dataset(
     mat_path: str | Path | None = None,

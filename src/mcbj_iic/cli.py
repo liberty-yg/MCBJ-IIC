@@ -30,7 +30,7 @@ from .utils import (
     transform_traces,
 )
 
-#Edited the cli.py to include batch normalization
+#Edited the cli.py to include batch normalization and overclustering
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train and evaluate the MCBJ IIC benchmark workflow.")
     parser.add_argument(
@@ -43,21 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-clusters", type=int, default=7)
     parser.add_argument("--crop-size", type=int, default=340)
     parser.add_argument("--conductance-floor", type=float, default=-5.5)
-    parser.add_argument(
-        "--no-batch-norm", action="store_true",
-        help="Disable batch normalisation (not recommended)",
-    )
-    # parser = argparse.ArgumentParser(description="Train and evaluate the MCBJ IIC benchmark workflow.")
-    # parser.add_argument(
-    #     "--data",
-    #     type=str,
-    #     default=None,
-    #     help="Path to the local MATLAB dataset. If omitted, the script searches for Data.mat in the current folder or repository root.",
-    # )
-    # parser.add_argument("--output-dir", type=str, default="runs/benchmark_run", help="Directory where results are saved")
-    # parser.add_argument("--num-clusters", type=int, default=7)
-    # parser.add_argument("--crop-size", type=int, default=340)
-    # parser.add_argument("--conductance-floor", type=float, default=-5.5)
 
     # Model hyperparameters.
     parser.add_argument("--numfilters", type=int, default=32)
@@ -66,6 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stride", type=int, default=5)
     parser.add_argument("--padding", type=str, default="same")
     parser.add_argument("--dilation", type=int, default=1)
+    parser.add_argument(
+        "--num-clusters-overclustering",
+        type=int,
+        default=0,
+        help="Number of overclustering head clusters. 0 disables. Recommended: 3x num-clusters (e.g. 21 for 7 clusters).",
+    )
+    parser.add_argument(
+        "--no-batch-norm",
+        action="store_true",
+        help="Disable batch normalisation (not recommended)",
+    )
 
     # Training hyperparameters.
     parser.add_argument("--learning-rate", type=float, default=5e-4)
@@ -78,13 +74,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--order", type=int, default=3)
     parser.add_argument("--no-gpu-memory-growth", action="store_true")
     parser.add_argument("--save-activation-plots", action="store_true")
-
-    parser.add_argument(
-        "--num-clusters-overclustering",
-        type=int,
-        default=0,
-        help="Number of overclustering head clusters. 0 disables. Recommended: 3x num-clusters (e.g. 21 for 7 clusters).",
-    )
     return parser
 
 
@@ -134,7 +123,8 @@ def main(argv: list[str] | None = None) -> int:
     # Save quick-look plots before training so data issues are visible immediately.
     plot_trace_examples(dataset.raw_traces, output_dir / "trace_examples.png")
     plot_trace_length_distribution(dataset.raw_traces, output_dir / "trace_length_distribution.png")
-    plot_label_distribution(dataset.y, output_dir / "ground_truth_distribution.png", title="Ground-truth label distribution")
+    if dataset.y is not None:
+        plot_label_distribution(dataset.y, output_dir / "ground_truth_distribution.png", title="Ground-truth label distribution")
 
     augmented_preview = transform_traces(
         dataset.x[:6],
@@ -161,17 +151,31 @@ def main(argv: list[str] | None = None) -> int:
         num_clusters=args.num_clusters,
         batch_size=args.batch_size,
     )
-    metrics = evaluate_clustering(dataset.y, probabilities)
+    predicted_labels = np.argmax(probabilities, axis=1)
 
-    predicted_labels = metrics.pop("predicted_labels")
-    confusion = np.asarray(metrics["confusion_matrix"])
+    if dataset.y is not None:
+        metrics = evaluate_clustering(dataset.y, probabilities)
+        predicted_labels = metrics.pop("predicted_labels")
+        confusion = np.asarray(metrics["confusion_matrix"])
+        plot_label_distribution(predicted_labels, output_dir / "predicted_cluster_distribution.png", title="Predicted cluster distribution")
+        plot_prediction_probabilities(probabilities, output_dir / "prediction_probabilities.png")
+        plot_confusion_matrix(confusion, output_dir / "confusion_matrix.png")
+        plot_confusion_matrix(confusion, output_dir / "confusion_matrix_normalized.png", normalize=True)
+    else:
+        metrics = {
+            "accuracy": None,
+            "fowlkes_mallows": None,
+            "ami_index": None,
+            "ari_index": None,
+            "num_predicted_clusters": int(len(np.unique(predicted_labels))),
+            "confusion_matrix": None,
+        }
+        plot_label_distribution(predicted_labels, output_dir / "predicted_cluster_distribution.png", title="Predicted cluster distribution")
+        plot_prediction_probabilities(probabilities, output_dir / "prediction_probabilities.png")
 
-    plot_label_distribution(predicted_labels, output_dir / "predicted_cluster_distribution.png", title="Predicted cluster distribution")
-    plot_prediction_probabilities(probabilities, output_dir / "prediction_probabilities.png")
-    plot_confusion_matrix(confusion, output_dir / "confusion_matrix.png")
-    plot_confusion_matrix(confusion, output_dir / "confusion_matrix_normalized.png", normalize=True)
     plot_cluster_mean_traces(dataset.x, predicted_labels, output_dir / "cluster_mean_traces.png")
-    plot_cluster_histograms(dataset.raw_traces, predicted_labels, output_dir / "cluster_histograms.png")
+    if dataset.raw_traces is not None:
+        plot_cluster_histograms(dataset.raw_traces, predicted_labels, output_dir / "cluster_histograms.png")
 
     try:
         plot_conv_filter_weights(model, output_dir / "conv_filter_weights.png")
@@ -201,13 +205,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(f"Dataset: {resolved_data_path}")
-    print(
-        "Accuracy: {accuracy:.4f} | FM index: {fm:.4f} | AMI: {ami:.4f} | ARI: {ari:.4f} | predicted clusters: {clusters}".format(
-            accuracy=metrics["accuracy"],
-            fm=metrics["fowlkes_mallows"],
-            ami=metrics["ami_index"],
-            ari=metrics["ari_index"],
-            clusters=metrics["num_predicted_clusters"],
+    if dataset.y is not None:
+        print(
+            "Accuracy: {accuracy:.4f} | FM index: {fm:.4f} | AMI: {ami:.4f} | ARI: {ari:.4f} | predicted clusters: {clusters}".format(
+                accuracy=metrics["accuracy"],
+                fm=metrics["fowlkes_mallows"],
+                ami=metrics["ami_index"],
+                ari=metrics["ari_index"],
+                clusters=metrics["num_predicted_clusters"],
+            )
         )
-    )
+    else:
+        print(f"Predicted clusters: {metrics['num_predicted_clusters']} (no ground truth labels)")
     return 0

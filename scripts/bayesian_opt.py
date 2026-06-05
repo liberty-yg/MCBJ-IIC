@@ -56,6 +56,10 @@ from mcbj_iic.utils import (
 # --------------------------------------------------------------------------
 parser = argparse.ArgumentParser()
 parser.add_argument("--test", action="store_true", help="Run quick sanity check")
+parser.add_argument("--unlabelled", action="store_true",
+    help="Run BO on unlabelled dataset with full search space and patience=30")
+parser.add_argument("--data", type=str, default=None,
+    help="Path to dataset .mat file. Defaults to benchmark Data.mat if omitted.")
 args = parser.parse_args()
 
 if args.test:
@@ -68,6 +72,16 @@ if args.test:
     OUTPUT_DIR = ensure_dir("runs/bayesian_opt_test")
     SAMPLERS = {"TPE": optuna.samplers.TPESampler(seed=42)}
     print("*** RUNNING IN TEST MODE ***")
+elif args.unlabelled:
+    N_TRIALS = 100
+    N_REPEATS_PER_TRIAL = 3
+    EPOCHS_SEARCH = 50
+    EPOCHS_VALIDATION = 100
+    CONVERGENCE_PATIENCE = 50
+    CONVERGENCE_THRESHOLD = 1e-3
+    OUTPUT_DIR = ensure_dir("runs/bayesian_opt_unlabelled")
+    SAMPLERS = {"TPE": optuna.samplers.TPESampler(seed=42)}
+    print("*** RUNNING IN UNLABELLED MODE ***")
 else:
     # --------------------------------------------------------------------------
     # Configuration
@@ -103,11 +117,10 @@ except Exception as e:
 # Load dataset once — shared across all trials
 # --------------------------------------------------------------------------
 print("Loading dataset...")
-dataset = load_mat_dataset(crop_size=340, conductance_floor=-5.5)
-print(
-    f"Dataset loaded: {dataset.metadata['num_samples']} samples, "
-    f"{dataset.metadata['num_clusters']} ground-truth clusters."
-)
+dataset = load_mat_dataset(args.data, crop_size=340, conductance_floor=-5.5)
+num_clusters_info = dataset.metadata.get('num_clusters')
+clusters_str = f"{num_clusters_info} ground-truth clusters" if num_clusters_info else "no ground-truth labels (unlabelled)"
+print(f"Dataset loaded: {dataset.metadata['num_samples']} samples, {clusters_str}.")
 
 
 # --------------------------------------------------------------------------
@@ -193,18 +206,19 @@ def objective(trial: optuna.Trial) -> float:
         losses.append(float(history[-1]["loss"]))
 
         # AMI — logged for reference only, not optimised
-        probabilities = predict_in_batches(
-            dataset.x,
-            model,
-            num_clusters=model_config.num_clusters,
-            batch_size=64,
-        )
-        metrics = evaluate_clustering(dataset.y, probabilities)
-        amis.append(float(metrics["ami_index"]))
+        if dataset.y is not None:
+            probabilities = predict_in_batches(
+                dataset.x,
+                model,
+                num_clusters=model_config.num_clusters,
+                batch_size=64,
+            )
+            metrics = evaluate_clustering(dataset.y, probabilities)
+            amis.append(float(metrics["ami_index"]))
 
     mean_loss = float(np.mean(losses))
-    mean_ami  = float(np.mean(amis))
-    std_ami   = float(np.std(amis))
+    mean_ami  = float(np.mean(amis)) if amis else None
+    std_ami   = float(np.std(amis))  if amis else None
     std_loss  = float(np.std(losses))
 
     # Monitor GPU and RAM memory
@@ -216,13 +230,14 @@ def objective(trial: optuna.Trial) -> float:
         trial.set_user_attr("ram_percent", mem["ram_percent"])
 
     # Store AMI and stability metrics for post-hoc analysis
-    trial.set_user_attr("ami_mean", mean_ami)
-    trial.set_user_attr("ami_std",  std_ami)
+    if mean_ami is not None:
+        trial.set_user_attr("ami_mean", mean_ami)
+        trial.set_user_attr("ami_std",  std_ami)
+        trial.set_user_attr(
+            "num_predicted_clusters",
+            int(metrics["num_predicted_clusters"])
+        )
     trial.set_user_attr("loss_std", std_loss)
-    trial.set_user_attr(
-        "num_predicted_clusters",
-        int(metrics["num_predicted_clusters"])
-    )
 
     print(
         f"  Trial {trial.number:>3d} | "
@@ -233,7 +248,7 @@ def objective(trial: optuna.Trial) -> float:
         f"layers={model_config.numlayers} "
         f"stride={model_config.stride} | "
         f"loss={mean_loss:.4f}±{std_loss:.4f}  "
-        f"AMI={mean_ami:.4f}±{std_ami:.4f}"
+        + (f"AMI={mean_ami:.4f}±{std_ami:.4f}" if mean_ami is not None else "AMI=N/A (unlabelled)")
         + (f"  GPU={mem.get('gpu_peak_mb', '?')}MB"
            f"  RAM={mem.get('ram_used_gb', '?')}GB({mem.get('ram_percent', '?')}%)"
            if mem else "")
@@ -420,9 +435,10 @@ def validate_top_configs(
                 num_clusters=model_config.num_clusters,
                 batch_size=64,
             )
-            metrics = evaluate_clustering(dataset.y, probabilities)
             val_losses.append(float(history[-1]["loss"]))
-            val_amis.append(float(metrics["ami_index"]))
+            if dataset.y is not None:
+                metrics = evaluate_clustering(dataset.y, probabilities)
+                val_amis.append(float(metrics["ami_index"]))
 
         result = {
             "rank":                    rank + 1,
@@ -431,15 +447,16 @@ def validate_top_configs(
             "search_ami_mean":         trial.user_attrs.get("ami_mean"),
             "validation_loss_mean":    float(np.mean(val_losses)),
             "validation_loss_std":     float(np.std(val_losses)),
-            "validation_ami_mean":     float(np.mean(val_amis)),
-            "validation_ami_std":      float(np.std(val_amis)),
+            "validation_ami_mean":     float(np.mean(val_amis)) if val_amis else None,
+            "validation_ami_std":      float(np.std(val_amis))  if val_amis else None,
             "params":                  trial.params,
         }
         validation_results.append(result)
 
+        ami_str = f"{np.mean(val_amis):.4f} ± {np.std(val_amis):.4f}" if val_amis else "N/A"
         print(
             f"  Loss: {np.mean(val_losses):.4f} ± {np.std(val_losses):.4f}  "
-            f"AMI:  {np.mean(val_amis):.4f} ± {np.std(val_amis):.4f}"
+            f"AMI:  {ami_str}"
         )
 
     return validation_results

@@ -77,8 +77,11 @@ def run_cvs(
     # Histogram bin edges — same as plot_cluster_histograms in plotting.py
     gmin, gmax = 3e-6, 10
     dmin, dmax = -0.5, 2.5
-    mean_step = abs(float(np.mean(np.diff(np.asarray(dataset.raw_traces[0])[:, 0]))))
-    mean_step = max(mean_step, 1e-6)
+    if dataset.raw_traces is not None:
+        mean_step = abs(float(np.mean(np.diff(np.asarray(dataset.raw_traces[0])[:, 0]))))
+        mean_step = max(mean_step, 1e-6)
+    else:
+        mean_step = 0.01  # default step size for pre-processed data (0.01nm)
     d_edges = np.linspace(dmin, dmax, int((dmax - dmin) / (2 * mean_step)))
     g_edges = np.logspace(np.log10(gmin), np.log10(gmax), 100)
     
@@ -122,12 +125,26 @@ def run_cvs(
         
         # Compute pairwise correlations between cluster histograms
         unique_clusters = np.unique(best_labels)
-        histograms = {
-            c: compute_cluster_histogram(
-                dataset.raw_traces, best_labels, c, d_edges, g_edges
-            )
-            for c in unique_clusters
-        }
+        if dataset.raw_traces is not None:
+            histograms = {
+                c: compute_cluster_histogram(
+                    dataset.raw_traces, best_labels, c, d_edges, g_edges
+                )
+                for c in unique_clusters
+            }
+        else:
+            # Unlabelled pre-processed data — build histograms from processed x
+            histograms = {
+                c: np.outer(
+                    np.ones(len(d_edges) - 1),
+                    np.histogram(
+                        dataset.x[best_labels == c, :, 0].flatten(),
+                        bins=len(g_edges) - 1,
+                        range=(-5.5, 0)
+                    )[0]
+                )
+                for c in unique_clusters
+            }
         
         # Build correlation matrix (upper triangle only, diagonal=1)
         correlations = []
@@ -249,4 +266,3 @@ if __name__ == "__main__":
     
     print(f"\nTo run the final benchmark with optimal k:")
     print(f"python scripts/bench7.py --num-clusters {optimal_k} --output-dir runs/cvs_final")
-
