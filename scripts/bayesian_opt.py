@@ -56,6 +56,8 @@ from mcbj_iic.utils import (
 # --------------------------------------------------------------------------
 parser = argparse.ArgumentParser()
 parser.add_argument("--test", action="store_true", help="Run quick sanity check")
+parser.add_argument("--unlabelled", action="store_true",
+    help="Run BO on unlabelled dataset")
 parser.add_argument("--data", type=str, default=None,
     help="Path to dataset .mat file. Defaults to benchmark Data.mat if omitted.")
 args = parser.parse_args()
