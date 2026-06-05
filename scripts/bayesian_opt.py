@@ -211,21 +211,20 @@ def objective(trial: optuna.Trial) -> float:
         losses.append(float(history[-1]["loss"]))
 
         # AMI — logged for reference only, not optimised
-        probabilities = predict_in_batches(
-            dataset.x,
-            model,
-            num_clusters=model_config.num_clusters,
-            batch_size=64,
-        )
         if dataset.y is not None:
-            probabilities = predict_in_batches(...)
+            probabilities = predict_in_batches(
+                dataset.x,
+                model,
+                num_clusters=model_config.num_clusters,
+                batch_size=64,
+            )
             metrics = evaluate_clustering(dataset.y, probabilities)
             amis.append(float(metrics["ami_index"]))
 
     mean_loss = float(np.mean(losses))
-    mean_ami  = float(np.mean(amis))
-    std_ami   = float(np.std(amis))
     std_loss  = float(np.std(losses))
+    mean_ami  = float(np.mean(amis)) if amis else None
+    std_ami   = float(np.std(amis))  if amis else None
 
     # Monitor GPU and RAM memory
     mem = get_memory_usage()
