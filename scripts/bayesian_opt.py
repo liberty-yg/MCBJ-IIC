@@ -163,6 +163,10 @@ def objective(trial: optuna.Trial) -> float:
     # Clear accumulated TF graphs and weights from previous trials
     tf.keras.backend.clear_session()
 
+    # metrics is only set when dataset.y is not None — initialise to None
+    # so references are always valid regardless of labelled/unlabelled mode
+    metrics = None
+
     num_clusters = trial.suggest_int("num_clusters", 5, 9)
 
     model_config = ModelConfig(
@@ -269,7 +273,7 @@ def objective(trial: optuna.Trial) -> float:
             "gpu_peak_mb":            mem.get("gpu_peak_mb"),
             "ram_used_gb":            mem.get("ram_used_gb"),
             "ram_percent":            mem.get("ram_percent"),
-            "num_predicted_clusters": int(metrics["num_predicted_clusters"]) if dataset.y is not None else None,
+            "num_predicted_clusters": int(metrics["num_predicted_clusters"]) if metrics is not None else None,
             "params":                 trial.params,
         },
     )
